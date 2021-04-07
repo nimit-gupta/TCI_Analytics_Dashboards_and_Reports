@@ -1,0 +1,4415 @@
+import pandas as pd
+import numpy as np
+import cx_Oracle as cx
+
+import dash
+import dash_bootstrap_components as dbc
+import dash_core_components as dcc
+import dash_html_components as html
+from dash.dependencies import Input, Output, State
+
+import plotly.graph_objects as go
+
+import config 
+
+app = dash.Dash(__name__, requests_pathname_prefix='/app7/', external_stylesheets=[dbc.themes.BOOTSTRAP])
+
+# the style arguments for the sidebar. We use position:fixed and a fixed width
+SIDEBAR_STYLE = {
+    "position": "fixed",
+    "top": 0,
+    "left": 0,
+    "bottom": 0,
+    "width": "16rem",
+    "padding": "2rem 1rem",
+    "background-color": "rgb(230, 225, 225)",
+    "overflow":"scroll"
+}
+
+# the styles for the main content position it to the right of the sidebar and
+# add some padding.
+CONTENT_STYLE = {
+    "margin-left": "18rem",
+    "margin-right": "2rem",
+    "padding": "2rem 1rem",
+}
+
+con = cx.connect(config.CONN_STR)
+
+sql = ''' 
+        SELECT 
+            DISTINCT REGION_CODE 
+        FROM  
+            XM_BRANCHS 
+        WHERE 
+            STATUS LIKE 'VALID' 
+        ORDER BY
+            REGION_CODE ASC
+     '''
+
+df = pd.read_sql_query(sql, con)
+df['COPY_REGION_CODE'] = df['REGION_CODE']
+df.loc[len(df)] = 'ALL'
+df['COPY_REGION_CODE'].iloc[-1] = ''
+
+sidebar = html.Div(
+    [
+        html.Div([html.H6('Region'),
+                  dcc.Dropdown(
+                               id = 'region-dropdown',
+                               options = [{'label': k, 'value' : v} for k, v in zip(df['REGION_CODE'], df['COPY_REGION_CODE'])],
+                               #placeholder = 'Region',
+                               style = {'font-weight' : 'bold'})
+                ]),
+        html.Br(),
+        html.Div([html.H6('Controlling'),
+                  dcc.Dropdown(
+                               id = 'controlling-dropdown',
+                               #placeholder = 'Controlling',
+                               style = {'font-weight' : 'bold'}
+                              )
+                ]),
+        html.Br(),
+        html.Div([html.H6('Branch'),
+                  dcc.Dropdown(
+                               id = 'branch-dropdown',
+                               #placeholder = 'Branch',
+                               style = {'font-weight' : 'bold'})
+                ]),
+        html.Br(),
+        html.Div([html.H6('Division'),
+                  dcc.Dropdown(
+                               id = 'division-dropdown',
+                               ##placeholder = 'Division',
+                               style = {'font-weight' : 'bold'})
+                ]),
+        html.Br(),
+        html.Div([html.H6('Basis'),
+                  dcc.Dropdown(
+                               id = 'basis-dropdown',
+                               #placeholder = 'Basis',
+                               style = {'font-weight' : 'bold'})
+                ]),
+        html.Br(),
+        html.Div([
+                  dbc.Row([ 
+                           dbc.Col([html.H6('Year'),
+                                    dcc.Dropdown(
+                                                 id = 'year-dropdown',
+                                                 #placeholder = 'Year',
+                                                 style = {'font-weight' : 'bold'}
+                                                )
+                                   ]),
+                           dbc.Col([html.H6('Month'),
+                                    dcc.Dropdown(
+                                                 id = 'month-dropdown',
+                                                 #placeholder = 'Month',
+                                                 style = {'font-weight' : 'bold'}
+                                                 )
+                           ])
+                          ])
+                 ]),
+        html.Br(),         
+        html.Div([html.H6('Period'),
+                  dcc.Dropdown(
+                                id = 'checklist-dropdown',
+                                options=[
+                                         {'label': ' For the Month', 'value':'FTM'},
+                                         {'label': ' Up to the Month', 'value':'CUM'}
+                                        ],
+                                #placeholder = 'Period',
+                                style = {'font-weight' : 'bold'}
+                                
+                               )  
+                 ]),
+        html.Br(),
+        html.Div([
+                  dcc.RadioItems(
+                                 id = 'comparison-period-dropdown',
+                                 options = [
+                                            {'label' :'Between Months - No', 'value' : 'No'},
+                                            {'label' :'Between Months - Yes','value' : 'Yes'}
+                                           ],
+                                 value = 'No',
+                                 style = {'display' : 'block', 'font-weight' : 'bold', 'margin-left' : '2rem'}
+                                )
+         ]), 
+        html.Br(),
+        html.Div([
+                  dbc.Row([ 
+                           dbc.Col([
+                                    dcc.Dropdown(
+                                                 id = 'visible-year-dropdown',
+                                                 options = [{'label': p, 'value': p} for p in ['2020','2021']],
+                                                 value = ' ',
+                                                 style = {'display':'none','font-weight' : 'bold'}
+                                                )
+                                  ]),
+                           dbc.Col([
+                                    dcc.Dropdown(
+                                                 id = 'visible-month-dropdown',
+                                                 options = [{'label' : q, 'value' : q} for q in [ '01','02','03',\
+                                                  '04','05','06',\
+                                                  '07','08','09',\
+                                                  '10','11','12']
+                                                ],
+                                                 value = ' ',
+                                                 style = {'display':'none','font-weight' : 'bold'}
+                                                 )
+                                  ])
+                          ])
+                 ]),
+        html.Br(),                            
+        html.Div([
+                  dbc.Row([
+                            dbc.Col([
+                                      html.Button(
+                                                    'Submit',
+                                                    id = 'submit_button',
+                                                    type = 'submit',
+                                                    style = {'height':'35px','display':'inline-block',\
+                                                                                    'background-color': '#ffffff',\
+                                                                                    'font-weight':'bold', 'border-radius':'4px'}
+                                                )
+                                    ]),
+                            dbc.Col([
+                                      html.A(
+                                                html.Button('Refresh', style = {'height':'35px','display':'inline-block',\
+                                                                                        'background-color': '#ffffff',\
+                                                                                        'font-weight':'bold', 'border-radius':'4px'}),
+                                                href = '/app7/',
+                                                )
+                                    ])
+                          ]) 
+                 ])              
+
+    ],
+    style=SIDEBAR_STYLE,
+)
+
+app.layout = html.Div([
+                      html.Div([sidebar]), 
+                      html.Br(),
+                      html.Div([dcc.Loading(dcc.Graph(id = 'Graph-1'))], style = {"margin-left": "18rem", "margin-right" : "2rem"}),
+                      html.Br(),
+                      html.Div([dcc.Loading(dcc.Graph(id = 'Graph-2'))], style = {"margin-left": "18rem", "margin-right" : "2rem"}),
+                      html.Br(),
+                      html.Div([dcc.Loading(dcc.Graph(id = 'Graph-3'))], style = {"margin-left": "18rem", "margin-right" : "2rem"}),
+                      ],style = {'width' : 'auto', 'background-color': '#f2f2f2'})
+
+@app.callback(Output('controlling-dropdown', 'options'),[Input('region-dropdown', 'value')])
+def set_controlling_options(selected_region):
+    con = cx.connect(config.CONN_STR)
+    sql = ''' SELECT 
+                      DISTINCT CONTROLLING_CODE 
+                FROM 
+                     XM_BRANCHS 
+                WHERE 
+                     REGION_CODE = '%s' 
+                     AND STATUS LIKE 'VALID' 
+                ORDER BY
+                    CONTROLLING_CODE ASC
+            '''%(
+                  selected_region
+                )
+    df = pd.read_sql_query(sql, con)
+    df['COPY_CONTROLLING_CODE'] = df['CONTROLLING_CODE']
+    df.loc[len(df)] = 'ALL'
+    df['COPY_CONTROLLING_CODE'].iloc[-1] = ''
+    return [{'label': k, 'value' : v} for k, v in zip(df['CONTROLLING_CODE'], df['COPY_CONTROLLING_CODE'])] 
+
+@app.callback(Output('branch-dropdown', 'options'),[Input('controlling-dropdown', 'value')])
+def set_branch_options(selected_controlling):
+    con = cx.connect(config.CONN_STR)
+    sql = ''' SELECT 
+                      DISTINCT BRANCH_CODE 
+                FROM 
+                     XM_BRANCHS 
+                WHERE 
+                     CONTROLLING_CODE = '%s' 
+                     AND STATUS LIKE 'VALID' 
+                ORDER BY
+                    BRANCH_CODE ASC
+            '''%(
+                  selected_controlling
+                )
+    df = pd.read_sql_query(sql, con)
+    df['COPY_BRANCH_CODE'] = df['BRANCH_CODE']
+    df.loc[len(df)] = 'ALL'
+    df['COPY_BRANCH_CODE'].iloc[-1] = ''
+    return [{'label': k, 'value' : v} for k, v in zip(df['BRANCH_CODE'], df['COPY_BRANCH_CODE'])]  
+
+@app.callback(Output('division-dropdown', 'options'),[Input('branch-dropdown', 'value')])
+def set_division_options(selected_division):
+     dict_div = {'Surface':'21','Air':'22','ECOM':'23',\
+                 'RAIL':'24','GTA':'25','AIR INTL':'26',\
+                 'C2C':'27', 'COLD CHAIN':'28','ALL':''}
+     return[{'label':l, 'value':m} for l, m in dict_div.items()]
+
+@app.callback(Output('basis-dropdown', 'options'),[Input('division-dropdown', 'value')])
+def set_division_options(selected_division):
+     dict_div = {'PAID':'PAID','TBB':'TBB','FOD':'FOD',\
+                 'BOD':'BOD','ALL':'ALL'}
+     return[{'label':l, 'value':m} for l, m in dict_div.items()]
+
+@app.callback(Output('year-dropdown', 'options'),[Input('basis-dropdown', 'value')])
+def set_year_start_options(selected_month):
+    return [{'label': p, 'value': p} for p in ['2020','2021']]
+
+@app.callback(Output('month-dropdown', 'options'),[Input('year-dropdown', 'value')])
+def set_month_start_options(selected_branch):
+    return [{'label' : q, 'value' : q} for q in [ '01','02','03',\
+                                                  '04','05','06',\
+                                                  '07','08','09',\
+                                                  '10','11','12']
+                                                ]
+
+@app.callback(Output('comparison-period-dropdown','style'),[
+                                                            Input('checklist-dropdown','value')
+                                                           ])
+def visible_checklist(checklist):
+    if checklist == 'FTM':
+       return {'display' : 'block', 'font-weight' : 'bold'}
+    elif checklist == 'CUM':
+       return {'display' : 'none', 'font-weight' : 'bold'}  
+    else:
+       return {'display' : 'none', 'font-weight' : 'bold'}
+
+@app.callback(Output('visible-year-dropdown','style'),[
+                                                       Input('comparison-period-dropdown','value')
+                                                      ])
+def visible_year(visible):
+    if visible == 'Yes':
+        return {'display' : 'block','font-weight' : 'bold'}
+    elif visible == 'No':
+        return {'display' : 'none','font-weight' : 'bold'}
+    else:
+        return {'display' : 'none','font-weight' : 'bold'}
+
+@app.callback(Output('visible-month-dropdown','style'),[
+                                                        Input('comparison-period-dropdown','value')
+                                                      ])
+def visible_month( visible):
+    if visible == 'Yes':
+        return {'display' : 'block','font-weight' : 'bold'}
+    elif visible == 'No':
+        return {'display' : 'none','font-weight' : 'bold'}
+    else:
+        return {'display' : 'none','font-weight' : 'bold'}
+
+
+@app.callback(Output('Graph-1','figure'),[Input('submit_button','n_clicks')],
+                                         [State('region-dropdown','value'),\
+                                          State('controlling-dropdown','value'),\
+                                          State('branch-dropdown','value'),\
+                                          State('division-dropdown','value'),\
+                                          State('basis-dropdown','value'),\
+                                          State('year-dropdown','value'),\
+                                          State('month-dropdown','value'),\
+                                          State('checklist-dropdown','value'),\
+                                          State('visible-year-dropdown', 'value'),\
+                                          State('visible-month-dropdown','value')
+                                         
+                                        ])
+
+def update_graph_1(n_clicks, region, controlling, branch, division, basis, year, month, checklist, year_1, month_1):
+
+    if n_clicks is not None and n_clicks > 0:
+
+        con = cx.connect(config.CONN_STR)
+        
+        if basis == 'PAID':
+
+            if checklist == 'FTM':
+
+                if year_1 == ' ' and month_1 == ' ':
+            
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(PAID_FRT,0))/100000,2) CYF
+                                ,ROUND(SUM(NVL(LYA_PAID_FRT,0))/100000,2) LYF
+                                ,ROUND((SUM(NVL(PAID_FRT,0)) - SUM(NVL(LYA_PAID_FRT,0)))/100000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                                                                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s', DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                    '''%{ 'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYF']
+                    y2 = df['CYF']
+                    y3 = df['GP']
+                    #x1 = df['REGION']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYF'],
+                                    name = 'LYF',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYF'],
+                                    name = 'CYF',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise Freight Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            bargap = 0.8,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="Freight (in Lkhs)", showgrid = False),
+                                            )
+
+                    }
+                
+                elif year_1 != ' ' and month_1 != ' ':
+
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(PAID_FRT,0))/100000,2) CYF
+                                ,ROUND(SUM(NVL(LYA_PAID_FRT,0))/100000,2) LYF
+                                ,ROUND((SUM(NVL(PAID_FRT,0)) - SUM(NVL(LYA_PAID_FRT,0)))/100000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year_1)s%(month_1)s','YYYYMM'))
+                                                                                                                          AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s', DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                    '''%{ 'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division,\
+                          'year_1':year_1, 'month_1':month_1,}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYF']
+                    y2 = df['CYF']
+                    y3 = df['GP']
+                    #x1 = df['REGION']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYF'],
+                                    name = 'LYF',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYF'],
+                                    name = 'CYF',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise Freight Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            bargap = 0.8,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="Freight (in Lkhs)", showgrid = False),
+                                            )
+
+                    }
+ 
+            elif checklist == 'CUM':
+    
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(PAID_FRT,0))/100000,2) CYF
+                                ,ROUND(SUM(NVL(LYA_PAID_FRT,0))/100000,2) LYF
+                                ,ROUND((SUM(NVL(PAID_FRT,0)) - SUM(NVL(LYA_PAID_FRT,0)))/100000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) 
+                                    BETWEEN '01-APR-'||CASE WHEN TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'MM') IN ('01','02','03')
+                                        THEN TO_CHAR(TO_NUMBER(TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY'))-1)
+                                            ELSE TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY') END
+                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM')) 
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                        '''%{'year': year, 'month': month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYF']
+                    y2 = df['CYF']
+                    y3 = df['GP']
+                    #x1 = df['REGION']
+                    x1 = df.index
+            
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                               font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                               font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                               font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                    
+                    return {
+                            'data': [
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['LYF'],
+                                        name = 'LYF',
+                                        marker_color='rgb(242, 109, 7)'),
+                    
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['CYF'],
+                                        name = 'CYF',
+                                        marker_color='rgb(7, 128, 242)'),
+                        
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['GP'],
+                                        name = 'Growth',
+                                        marker_color= df['color'])
+                                   ],
+                            'layout' : go.Layout(
+                                                 title={
+                                                        'text': "Region-Controlling-Branch Wise Freight Comparison LY Vs CY",
+                                                        'y':0.98,
+                                                        'x':0.5,
+                                                        'xanchor': 'center',
+                                                        'yanchor': 'top'
+                                                       },
+                                                annotations = annotations,
+                                                barmode = 'group',
+                                                bargap = 0.8,
+                                                bargroupgap = 0.2,
+                                                legend=dict(
+                                                orientation="h",
+                                                yanchor="bottom",
+                                                y=1.02,
+                                                xanchor="right",
+                                                x=1
+                                                ),
+                                                showlegend = True,
+                                                xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                           showticklabels = False, 
+                                                           showgrid = False),
+                                                yaxis=dict(title="Freight (in Lkhs)", showgrid = False)
+                                                )
+                        
+                        }
+            else:
+                return{}
+
+        elif basis == 'TBB':
+        
+            if checklist == 'FTM':
+
+                if year_1 == ' ' and month_1 == ' ':
+            
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(TBB_FRT,0))/100000,2) CYF
+                                ,ROUND(SUM(NVL(LYA_TBB_FRT,0))/100000,2) LYF
+                                ,ROUND((SUM(NVL(TBB_FRT,0)) - SUM(NVL(LYA_TBB_FRT,0)))/100000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                                                                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                    '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYF']
+                    y2 = df['CYF']
+                    y3 = df['GP']
+                    #x1 = df['REGION']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYF'],
+                                    name = 'LYF',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYF'],
+                                    name = 'CYF',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise Freight Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            bargap = 0.8,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="Freight (in Lkhs)", showgrid = False)
+                                            )
+
+                    }
+
+                elif year_1 != ' ' and month_1 != ' ':
+
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(TBB_FRT,0))/100000,2) CYF
+                                ,ROUND(SUM(NVL(LYA_TBB_FRT,0))/100000,2) LYF
+                                ,ROUND((SUM(NVL(TBB_FRT,0)) - SUM(NVL(LYA_TBB_FRT,0)))/100000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year_1)s%(month_1)s','YYYYMM'))
+                                                                                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                    '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division,\
+                         'year_1': year_1, 'month_1': month_1}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYF']
+                    y2 = df['CYF']
+                    y3 = df['GP']
+                    #x1 = df['REGION']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYF'],
+                                    name = 'LYF',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYF'],
+                                    name = 'CYF',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise Freight Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            bargap = 0.8,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="Freight (in Lkhs)", showgrid = False)
+                                            )
+
+                    }
+
+            elif checklist == 'CUM':
+    
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(TBB_FRT,0))/100000,2) CYF
+                                ,ROUND(SUM(NVL(LYA_TBB_FRT,0))/100000,2) LYF
+                                ,ROUND((SUM(NVL(TBB_FRT,0)) - SUM(NVL(LYA_TBB_FRT,0)))/100000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) 
+                                    BETWEEN '01-APR-'||CASE WHEN TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'MM') IN ('01','02','03')
+                                        THEN TO_CHAR(TO_NUMBER(TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY'))-1)
+                                            ELSE TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY') END
+                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM')) 
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                        '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYF']
+                    y2 = df['CYF']
+                    y3 = df['GP']
+                    #x1 = df['REGION']
+                    x1 = df.index
+            
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                    
+                    return {
+                            'data': [
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['LYF'],
+                                        name = 'LYF',
+                                        marker_color='rgb(242, 109, 7)'),
+                    
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['CYF'],
+                                        name = 'CYF',
+                                        marker_color='rgb(7, 128, 242)'),
+                        
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['GP'],
+                                        name = 'Growth',
+                                        marker_color= df['color'])
+                                   ],
+                            'layout' : go.Layout(
+                                                 title={
+                                                        'text': "Region-Controlling-Branch Wise Freight Comparison LY Vs CY",
+                                                        'y':0.98,
+                                                        'x':0.5,
+                                                        'xanchor': 'center',
+                                                        'yanchor': 'top'
+                                                       },
+                                                annotations = annotations,
+                                                bargap = 0.8,
+                                                barmode = 'group',
+                                                bargroupgap = 0.2,
+                                                legend=dict(
+                                                orientation="h",
+                                                yanchor="bottom",
+                                                y=1.02,
+                                                xanchor="right",
+                                                x=1
+                                                ),
+                                                showlegend = True,
+                                                xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                           showticklabels = False, 
+                                                           showgrid = False),
+                                                yaxis=dict(title="Freight (in Lkhs)", showgrid = False)
+                                                )
+                        
+                        }
+            else:
+                return{}
+
+        elif basis == 'FOD':
+    
+            if checklist == 'FTM':
+
+                if year_1 == ' ' and month_1 == ' ':
+            
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(FOD_FRT,0))/100000,2) CYF
+                                ,ROUND(SUM(NVL(LYA_FOD_FRT,0))/100000,2) LYF
+                                ,ROUND((SUM(NVL(FOD_FRT,0)) - SUM(NVL(LYA_FOD_FRT,0)))/100000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                                                                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                    '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYF']
+                    y2 = df['CYF']
+                    y3 = df['GP']
+                    #x1 = df['REGION']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYF'],
+                                    name = 'LYF',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYF'],
+                                    name = 'CYF',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise Freight Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            bargap = 0.8,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="Freight (in Lkhs)", showgrid = False)
+                                            )
+
+                    }
+                
+                elif year_1 != ' ' and month_1 != ' ':
+
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(FOD_FRT,0))/100000,2) CYF
+                                ,ROUND(SUM(NVL(LYA_FOD_FRT,0))/100000,2) LYF
+                                ,ROUND((SUM(NVL(FOD_FRT,0)) - SUM(NVL(LYA_FOD_FRT,0)))/100000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year_1)s%(month_1)s','YYYYMM'))
+                                                                                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                    '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division,\
+                         'year_1':year_1, 'month_1':month_1}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYF']
+                    y2 = df['CYF']
+                    y3 = df['GP']
+                    #x1 = df['REGION']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYF'],
+                                    name = 'LYF',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYF'],
+                                    name = 'CYF',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise Freight Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            bargap = 0.8,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="Freight (in Lkhs)", showgrid = False)
+                                            )
+
+                    }
+
+            elif checklist == 'CUM':
+    
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(FOD_FRT,0))/100000,2) CYF
+                                ,ROUND(SUM(NVL(LYA_FOD_FRT,0))/100000,2) LYF
+                                ,ROUND((SUM(NVL(FOD_FRT,0)) - SUM(NVL(LYA_FOD_FRT,0)))/100000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) 
+                                    BETWEEN '01-APR-'||CASE WHEN TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'MM') IN ('01','02','03')
+                                        THEN TO_CHAR(TO_NUMBER(TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY'))-1)
+                                            ELSE TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY') END
+                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM')) 
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                        '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYF']
+                    y2 = df['CYF']
+                    y3 = df['GP']
+                    #x1 = df['REGION']
+                    x1 = df.index
+            
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                    
+                    return {
+                            'data': [
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['LYF'],
+                                        name = 'LYF',
+                                        marker_color='rgb(242, 109, 7)'),
+                    
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['CYF'],
+                                        name = 'CYF',
+                                        marker_color='rgb(7, 128, 242)'),
+                        
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['GP'],
+                                        name = 'Growth',
+                                        marker_color= df['color'])
+                                   ],
+                            'layout' : go.Layout(
+                                                 title={
+                                                        'text': "Region-Controlling-Branch Wise Freight Comparison LY Vs CY",
+                                                        'y':0.98,
+                                                        'x':0.5,
+                                                        'xanchor': 'center',
+                                                        'yanchor': 'top'
+                                                       },
+                                                annotations = annotations,
+                                                barmode = 'group',
+                                                bargroupgap = 0.2,
+                                                bargap = 0.8,
+                                                legend=dict(
+                                                orientation="h",
+                                                yanchor="bottom",
+                                                y=1.02,
+                                                xanchor="right",
+                                                x=1
+                                                ),
+                                                showlegend = True,
+                                                xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                           showticklabels = False, 
+                                                           showgrid = False),
+                                                yaxis=dict(title="Freight (in Lkhs)", showgrid = False)
+                                                )
+                        
+                        }
+            else:
+                return{}
+
+        elif basis == 'BOD':
+    
+            if checklist == 'FTM':
+
+                if year_1 == ' ' and month_1 == ' ':
+            
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(BOD_FRT,0))/100000,2) CYF
+                                ,ROUND(SUM(NVL(LYA_BOD_FRT,0))/100000,2) LYF
+                                ,ROUND((SUM(NVL(BOD_FRT,0)) - SUM(NVL(LYA_BOD_FRT,0)))/100000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                                                                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            GROUP BY
+                                REGION_CODE
+                            ORDER BY
+                                REGION_CODE
+                    '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYF']
+                    y2 = df['CYF']
+                    y3 = df['GP']
+                    #x1 = df['REGION']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYF'],
+                                    name = 'LYF',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYF'],
+                                    name = 'CYF',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise Freight Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            bargap = 0.8,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="Freight (in Lkhs)", showgrid = False)
+                                            )
+
+                    }
+                
+                elif year_1 != ' ' and month_1 != ' ':
+
+                    sql = '''
+                            SELECT
+                                ROUND(SUM(NVL(BOD_FRT,0))/100000,2) CYF
+                                ,ROUND(SUM(NVL(LYA_BOD_FRT,0))/100000,2) LYF
+                                ,ROUND((SUM(NVL(BOD_FRT,0)) - SUM(NVL(LYA_BOD_FRT,0)))/100000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year_1)s%(month_1)s','YYYYMM'))
+                                                                                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                    '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division,\
+                         'year_1':year_1, 'month_1':month_1}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYF']
+                    y2 = df['CYF']
+                    y3 = df['GP']
+                    #x1 = df['REGION']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYF'],
+                                    name = 'LYF',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYF'],
+                                    name = 'CYF',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise Freight Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            bargap = 0.8,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="Freight (in Lkhs)", showgrid = False)
+                                            )
+
+                    }
+    
+            elif checklist == 'CUM':
+    
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(BOD_FRT,0))/100000,2) CYF
+                                ,ROUND(SUM(NVL(LYA_BOD_FRT,0))/100000,2) LYF
+                                ,ROUND((SUM(NVL(BOD_FRT,0)) - SUM(NVL(LYA_BOD_FRT,0)))/100000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) 
+                                    BETWEEN '01-APR-'||CASE WHEN TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'MM') IN ('01','02','03')
+                                        THEN TO_CHAR(TO_NUMBER(TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY'))-1)
+                                            ELSE TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY') END
+                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM')) 
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                        '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYF']
+                    y2 = df['CYF']
+                    y3 = df['GP']
+                    #x1 = df['REGION']
+                    x1 = df.index
+            
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                    
+                    return {
+                            'data': [
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['LYF'],
+                                        name = 'LYF',
+                                        marker_color='rgb(242, 109, 7)'),
+                    
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['CYF'],
+                                        name = 'CYF',
+                                        marker_color='rgb(7, 128, 242)'),
+                        
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['GP'],
+                                        name = 'Growth',
+                                        marker_color= df['color'])
+                                   ],
+                            'layout' : go.Layout(
+                                                 title={
+                                                        'text': "Region-Controlling-Branch Wise Freight Comparison LY Vs CY",
+                                                        'y':0.98,
+                                                        'x':0.5,
+                                                        'xanchor': 'center',
+                                                        'yanchor': 'top'
+                                                       },
+                                                annotations = annotations,
+                                                barmode = 'group',
+                                                bargroupgap = 0.2,
+                                                bargap = 0.8,
+                                                legend=dict(
+                                                orientation="h",
+                                                yanchor="bottom",
+                                                y=1.02,
+                                                xanchor="right",
+                                                x=1
+                                                ),
+                                                showlegend = True,
+                                                xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                           showticklabels = False, 
+                                                           showgrid = False),
+                                                yaxis=dict(title="Freight (in Lkhs)", showgrid = False)
+                                                )
+                        
+                        }
+            else:
+                return{}
+
+        elif basis == 'ALL':
+    
+            if checklist == 'FTM':
+
+                if year_1 == ' ' and month_1 == ' ':
+            
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(PAID_FRT,0) + NVL(TBB_FRT,0) + NVL(FOD_FRT,0) + NVL(BOD_FRT,0))/100000,2) CYF
+                                ,ROUND(SUM(NVL(LYA_PAID_FRT,0) + NVL(LYA_TBB_FRT,0) + NVL(LYA_FOD_FRT,0) + NVL(LYA_BOD_FRT,0))/100000, 2) LYF
+                                ,ROUND((SUM(NVL(PAID_FRT,0) + NVL(TBB_FRT,0) + NVL(FOD_FRT,0) + NVL(BOD_FRT,0)) 
+                                - SUM(NVL(LYA_PAID_FRT,0) + NVL(LYA_TBB_FRT,0) + NVL(LYA_FOD_FRT,0) + NVL(LYA_BOD_FRT,0)))/100000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                                                                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                    '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYF']
+                    y2 = df['CYF']
+                    y3 = df['GP']
+                    #x1 = df['REGION']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYF'],
+                                    name = 'LYF',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYF'],
+                                    name = 'CYF',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise Freight Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            bargap = 0.8,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="Freight (in Lkhs)", showgrid = False)
+                                            )
+
+                    }
+
+                elif year_1 != ' ' and month_1 != ' ':
+
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(PAID_FRT,0) + NVL(TBB_FRT,0) + NVL(FOD_FRT,0) + NVL(BOD_FRT,0))/100000,2) CYF
+                                ,ROUND(SUM(NVL(LYA_PAID_FRT,0) + NVL(LYA_TBB_FRT,0) + NVL(LYA_FOD_FRT,0) + NVL(LYA_BOD_FRT,0))/100000, 2) LYF
+                                ,ROUND((SUM(NVL(PAID_FRT,0) + NVL(TBB_FRT,0) + NVL(FOD_FRT,0) + NVL(BOD_FRT,0)) 
+                                - SUM(NVL(LYA_PAID_FRT,0) + NVL(LYA_TBB_FRT,0) + NVL(LYA_FOD_FRT,0) + NVL(LYA_BOD_FRT,0)))/100000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year_1)s%(month_1)s','YYYYMM'))
+                                                                                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                    '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division,\
+                        'year_1':year_1, 'month_1':month_1}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYF']
+                    y2 = df['CYF']
+                    y3 = df['GP']
+                    #x1 = df['REGION']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYF'],
+                                    name = 'LYF',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYF'],
+                                    name = 'CYF',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise Freight Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            bargap = 0.8,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="Freight (in Lkhs)", showgrid = False)
+                                            )
+
+                    }
+
+            elif checklist == 'CUM':
+    
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(PAID_FRT,0) + NVL(TBB_FRT,0) + NVL(FOD_FRT,0) + NVL(BOD_FRT,0))/100000,2) CYF
+                                ,ROUND(SUM(NVL(LYA_PAID_FRT,0) + NVL(LYA_TBB_FRT,0) + NVL(LYA_FOD_FRT,0) + NVL(LYA_BOD_FRT,0))/100000, 2) LYF
+                                ,ROUND((SUM(NVL(PAID_FRT,0) + NVL(TBB_FRT,0) + NVL(FOD_FRT,0) + NVL(BOD_FRT,0)) 
+                                - SUM(NVL(LYA_PAID_FRT,0) + NVL(LYA_TBB_FRT,0) + NVL(LYA_FOD_FRT,0) + NVL(LYA_BOD_FRT,0)))/100000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) 
+                                    BETWEEN '01-APR-'||CASE WHEN TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'MM') IN ('01','02','03')
+                                        THEN TO_CHAR(TO_NUMBER(TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY'))-1)
+                                            ELSE TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY') END
+                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM')) 
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                        '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYF']
+                    y2 = df['CYF']
+                    y3 = df['GP']
+                    #x1 = df['REGION']
+                    x1 = df.index
+            
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                    
+                    return {
+                            'data': [
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['LYF'],
+                                        name = 'LYF',
+                                        marker_color='rgb(242, 109, 7)'),
+                    
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['CYF'],
+                                        name = 'CYF',
+                                        marker_color='rgb(7, 128, 242)'),
+                        
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['GP'],
+                                        name = 'Growth',
+                                        marker_color= df['color'])
+                                   ],
+                            'layout' : go.Layout(
+                                                 title={
+                                                        'text': "Region-Controlling-Branch Wise Freight Comparison LY Vs CY",
+                                                        'y':0.98,
+                                                        'x':0.5,
+                                                        'xanchor': 'center',
+                                                        'yanchor': 'top'
+                                                       },
+                                                annotations = annotations,
+                                                barmode = 'group',
+                                                bargroupgap = 0.2,
+                                                bargap = 0.8,
+                                                legend=dict(
+                                                orientation="h",
+                                                yanchor="bottom",
+                                                y=1.02,
+                                                xanchor="right",
+                                                x=1
+                                                ),
+                                                showlegend = True,
+                                                xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                           showticklabels = False, 
+                                                           showgrid = False),
+                                                yaxis=dict(title="Freight (in Lkhs)", showgrid = False)
+                                                )
+                        
+                        }
+            else:
+                return{}
+    else:
+        return {}
+
+@app.callback(Output('Graph-2','figure'),[Input('submit_button','n_clicks')],
+                                         [State('region-dropdown','value'),\
+                                          State('controlling-dropdown','value'),\
+                                          State('branch-dropdown','value'),\
+                                          State('division-dropdown','value'),\
+                                          State('basis-dropdown','value'),\
+                                          State('year-dropdown','value'),\
+                                          State('month-dropdown','value'),\
+                                          State('checklist-dropdown','value'),\
+                                          State('visible-year-dropdown', 'value'),\
+                                          State('visible-month-dropdown','value')
+                                         
+                                        ])
+
+def update_graph_2(n_clicks, region, controlling, branch, division, basis, year, month, checklist, year_1, month_1 ):
+
+    if n_clicks is not None and n_clicks > 0:
+
+        con = cx.connect(config.CONN_STR)
+        
+        if basis == 'PAID':
+
+            if checklist == 'FTM':
+
+                if year_1 == ' ' and month_1 == ' ':
+            
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(PAID_WT,0))/1000,2) CYW
+                                ,ROUND(SUM(NVL(LYA_PAID_WT,0))/1000,2) LYW
+                                ,ROUND((SUM(NVL(PAID_WT,0)) - SUM(NVL(LYA_PAID_WT,0)))/1000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                                                                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s', DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                           
+                    '''%{ 'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYW']
+                    y2 = df['CYW']
+                    y3 = df['GP']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYW'],
+                                    name = 'LYW',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYW'],
+                                    name = 'CYW',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise Weight Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            bargap = 0.8,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="Weight (in Tons)", showgrid = False),
+                                            )
+
+                    }
+
+                elif year_1 != ' ' and month_1 != ' ':
+
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(PAID_WT,0))/1000,2) CYW
+                                ,ROUND(SUM(NVL(LYA_PAID_WT,0))/1000,2) LYW
+                                ,ROUND((SUM(NVL(PAID_WT,0)) - SUM(NVL(LYA_PAID_WT,0)))/1000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year_1)s%(month_1)s','YYYYMM'))
+                                                                                                                  AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s', DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                    '''%{ 'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division,\
+                          'year_1':year_1, 'month_1':month_1}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYW']
+                    y2 = df['CYW']
+                    y3 = df['GP']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYW'],
+                                    name = 'LYW',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYW'],
+                                    name = 'CYW',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise Weight Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            bargap = 0.8,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="Weight (in Tons)", showgrid = False),
+                                            )
+
+                    }
+
+            elif checklist == 'CUM':
+    
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(PAID_WT,0))/1000,2) CYW
+                                ,ROUND(SUM(NVL(LYA_PAID_WT,0))/1000,2) LYW
+                                ,ROUND((SUM(NVL(PAID_WT,0)) - SUM(NVL(LYA_PAID_WT,0)))/1000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) 
+                                    BETWEEN '01-APR-'||CASE WHEN TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'MM') IN ('01','02','03')
+                                        THEN TO_CHAR(TO_NUMBER(TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY'))-1)
+                                            ELSE TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY') END
+                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM')) 
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                        '''%{'year': year, 'month': month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYW']
+                    y2 = df['CYW']
+                    y3 = df['GP']
+                    x1 = df.index
+            
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                               font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                               font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                               font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                    
+                    return {
+                            'data': [
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['LYW'],
+                                        name = 'LYW',
+                                        marker_color='rgb(242, 109, 7)'),
+                    
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['CYW'],
+                                        name = 'CYW',
+                                        marker_color='rgb(7, 128, 242)'),
+                        
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['GP'],
+                                        name = 'Growth',
+                                        marker_color= df['color'])
+                                   ],
+                            'layout' : go.Layout(
+                                                 title={
+                                                        'text': "Region-Controlling-Branch Wise Weight Comparison LY Vs CY",
+                                                        'y':0.98,
+                                                        'x':0.5,
+                                                        'xanchor': 'center',
+                                                        'yanchor': 'top'
+                                                       },
+                                                annotations = annotations,
+                                                barmode = 'group',
+                                                bargap = 0.8,
+                                                bargroupgap = 0.2,
+                                                legend=dict(
+                                                orientation="h",
+                                                yanchor="bottom",
+                                                y=1.02,
+                                                xanchor="right",
+                                                x=1
+                                                ),
+                                                showlegend = True,
+                                                xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                           showticklabels = False, 
+                                                           showgrid = False),
+                                                yaxis=dict(title="Weight (in Tons)", showgrid = False)
+                                                )
+                        
+                        }
+            else:
+                return{}
+
+        elif basis == 'TBB':
+        
+            if checklist == 'FTM':
+
+                if year_1 == ' ' and month_1 == ' ':
+            
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(TBB_WT,0))/1000,2) CYW
+                                ,ROUND(SUM(NVL(LYA_TBB_WT,0))/1000,2) LYW
+                                ,ROUND((SUM(NVL(TBB_WT,0)) - SUM(NVL(LYA_TBB_WT,0)))/1000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                                                                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                    '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYW']
+                    y2 = df['CYW']
+                    y3 = df['GP']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYW'],
+                                    name = 'LYW',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYW'],
+                                    name = 'CYW',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise Weight Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            bargap = 0.8,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="Weight (in Tons)", showgrid = False)
+                                            )
+
+                    }
+
+                elif year_1 != ' ' and month_1 != ' ':
+
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(TBB_WT,0))/1000,2) CYW
+                                ,ROUND(SUM(NVL(LYA_TBB_WT,0))/1000,2) LYW
+                                ,ROUND((SUM(NVL(TBB_WT,0)) - SUM(NVL(LYA_TBB_WT,0)))/1000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year_1)s%(month_1)s','YYYYMM'))
+                                                                                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                    '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division,\
+                        'year_1': year_1, 'month_1': month_1}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYW']
+                    y2 = df['CYW']
+                    y3 = df['GP']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYW'],
+                                    name = 'LYW',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYW'],
+                                    name = 'CYW',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise Weight Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            bargap = 0.8,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="Weight (in Tons)", showgrid = False)
+                                            )
+
+                    }
+
+            elif checklist == 'CUM':
+    
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(TBB_WT,0))/1000,2) CYW
+                                ,ROUND(SUM(NVL(LYA_TBB_WT,0))/1000,2) LYW
+                                ,ROUND((SUM(NVL(TBB_WT,0)) - SUM(NVL(LYA_TBB_WT,0)))/1000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) 
+                                    BETWEEN '01-APR-'||CASE WHEN TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'MM') IN ('01','02','03')
+                                        THEN TO_CHAR(TO_NUMBER(TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY'))-1)
+                                            ELSE TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY') END
+                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM')) 
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                        '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYW']
+                    y2 = df['CYW']
+                    y3 = df['GP']
+                    x1 = df.index
+            
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                    
+                    return {
+                            'data': [
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['LYW'],
+                                        name = 'LYW',
+                                        marker_color='rgb(242, 109, 7)'),
+                    
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['CYW'],
+                                        name = 'CYW',
+                                        marker_color='rgb(7, 128, 242)'),
+                        
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['GP'],
+                                        name = 'Growth',
+                                        marker_color= df['color'])
+                                   ],
+                            'layout' : go.Layout(
+                                                 title={
+                                                        'text': "Region-Controlling-Branch Wise Weight Comparison LY Vs CY",
+                                                        'y':0.98,
+                                                        'x':0.5,
+                                                        'xanchor': 'center',
+                                                        'yanchor': 'top'
+                                                       },
+                                                annotations = annotations,
+                                                bargap = 0.8,
+                                                barmode = 'group',
+                                                bargroupgap = 0.2,
+                                                legend=dict(
+                                                orientation="h",
+                                                yanchor="bottom",
+                                                y=1.02,
+                                                xanchor="right",
+                                                x=1
+                                                ),
+                                                showlegend = True,
+                                                xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                           showticklabels = False, 
+                                                           showgrid = False),
+                                                yaxis=dict(title="Weight (in Tons)", showgrid = False)
+                                                )
+                        
+                        }
+            else:
+                return{}
+
+        elif basis == 'FOD':
+    
+            if checklist == 'FTM':
+
+                if year_1 == ' ' and month_1 == ' ':
+            
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(FOD_WT,0))/1000,2) CYW
+                                ,ROUND(SUM(NVL(LYA_FOD_WT,0))/1000,2) LYW
+                                ,ROUND((SUM(NVL(FOD_WT,0)) - SUM(NVL(LYA_FOD_WT,0)))/1000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                                                                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                    '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYW']
+                    y2 = df['CYW']
+                    y3 = df['GP']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYW'],
+                                    name = 'LYW',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYW'],
+                                    name = 'CYW',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise Weight Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            bargap = 0.8,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="Weight (in Tons)", showgrid = False)
+                                            )
+
+                    }
+
+                elif year_1 != ' ' and month_1 != ' ':
+
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(FOD_WT,0))/1000,2) CYW
+                                ,ROUND(SUM(NVL(LYA_FOD_WT,0))/1000,2) LYW
+                                ,ROUND((SUM(NVL(FOD_WT,0)) - SUM(NVL(LYA_FOD_WT,0)))/1000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year_1)s%(month_1)s','YYYYMM'))
+                                                                                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                    '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division,\
+                         'year_1':year_1, 'month_1':month_1}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYW']
+                    y2 = df['CYW']
+                    y3 = df['GP']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYW'],
+                                    name = 'LYW',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYW'],
+                                    name = 'CYW',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise Weight Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            bargap = 0.8,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="Weight (in Tons)", showgrid = False)
+                                            )
+
+                    }
+ 
+            elif checklist == 'CUM':
+    
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(FOD_WT,0))/1000,2) CYW
+                                ,ROUND(SUM(NVL(LYA_FOD_WT,0))/1000,2) LYW
+                                ,ROUND((SUM(NVL(FOD_WT,0)) - SUM(NVL(LYA_FOD_WT,0)))/1000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) 
+                                    BETWEEN '01-APR-'||CASE WHEN TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'MM') IN ('01','02','03')
+                                        THEN TO_CHAR(TO_NUMBER(TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY'))-1)
+                                            ELSE TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY') END
+                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM')) 
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                        '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYW']
+                    y2 = df['CYW']
+                    y3 = df['GP']
+                    x1 = df.index
+            
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                    
+                    return {
+                            'data': [
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['LYW'],
+                                        name = 'LYW',
+                                        marker_color='rgb(242, 109, 7)'),
+                    
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['CYW'],
+                                        name = 'CYW',
+                                        marker_color='rgb(7, 128, 242)'),
+                        
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['GP'],
+                                        name = 'Growth',
+                                        marker_color= df['color'])
+                                   ],
+                            'layout' : go.Layout(
+                                                 title={
+                                                        'text': "Region-Controlling-Branch Wise Weight Comparison LY Vs CY",
+                                                        'y':0.98,
+                                                        'x':0.5,
+                                                        'xanchor': 'center',
+                                                        'yanchor': 'top'
+                                                       },
+                                                annotations = annotations,
+                                                barmode = 'group',
+                                                bargroupgap = 0.2,
+                                                bargap = 0.8,
+                                                legend=dict(
+                                                orientation="h",
+                                                yanchor="bottom",
+                                                y=1.02,
+                                                xanchor="right",
+                                                x=1
+                                                ),
+                                                showlegend = True,
+                                                xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                           showticklabels = False, 
+                                                           showgrid = False),
+                                                yaxis=dict(title="Weight (in Tons)", showgrid = False)
+                                                )
+                        
+                        }
+            else:
+                return{}
+
+        elif basis == 'BOD':
+    
+            if checklist == 'FTM':
+
+                if year_1 == ' ' and month_1 == ' ':
+            
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(BOD_WT,0))/1000,2) CYW
+                                ,ROUND(SUM(NVL(LYA_BOD_WT,0))/1000,2) LYW
+                                ,ROUND((SUM(NVL(BOD_WT,0)) - SUM(NVL(LYA_BOD_WT,0)))/1000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                                                                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                    '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYW']
+                    y2 = df['CYW']
+                    y3 = df['GP']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYW'],
+                                    name = 'LYW',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYW'],
+                                    name = 'CYW',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise Weight Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            bargap = 0.8,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="Weight (in Tons)", showgrid = False)
+                                            )
+
+                    }
+
+                elif year_1 != ' ' and month_1 != ' ':
+
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(BOD_WT,0))/1000,2) CYW
+                                ,ROUND(SUM(NVL(LYA_BOD_WT,0))/1000,2) LYW
+                                ,ROUND((SUM(NVL(BOD_WT,0)) - SUM(NVL(LYA_BOD_WT,0)))/1000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year_1)s%(month_1)s','YYYYMM'))
+                                                                                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                    '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division,\
+                        'year_1':year_1, 'month_1':month_1}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYW']
+                    y2 = df['CYW']
+                    y3 = df['GP']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYW'],
+                                    name = 'LYW',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYW'],
+                                    name = 'CYW',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise Weight Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            bargap = 0.8,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="Weight (in Tons)", showgrid = False)
+                                            )
+
+                    }
+
+            elif checklist == 'CUM':
+    
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(BOD_WT,0))/1000,2) CYW
+                                ,ROUND(SUM(NVL(LYA_BOD_WT,0))/1000,2) LYW
+                                ,ROUND((SUM(NVL(BOD_WT,0)) - SUM(NVL(LYA_BOD_WT,0)))/1000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) 
+                                    BETWEEN '01-APR-'||CASE WHEN TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'MM') IN ('01','02','03')
+                                        THEN TO_CHAR(TO_NUMBER(TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY'))-1)
+                                            ELSE TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY') END
+                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM')) 
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                        '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYW']
+                    y2 = df['CYW']
+                    y3 = df['GP']
+                    x1 = df.index
+            
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                    
+                    return {
+                            'data': [
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['LYW'],
+                                        name = 'LYW',
+                                        marker_color='rgb(242, 109, 7)'),
+                    
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['CYW'],
+                                        name = 'CYW',
+                                        marker_color='rgb(7, 128, 242)'),
+                        
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['GP'],
+                                        name = 'Growth',
+                                        marker_color= df['color'])
+                                   ],
+                            'layout' : go.Layout(
+                                                 title={
+                                                        'text': "Region-Controlling-Branch Wise Weight Comparison LY Vs CY",
+                                                        'y':0.98,
+                                                        'x':0.5,
+                                                        'xanchor': 'center',
+                                                        'yanchor': 'top'
+                                                       },
+                                                annotations = annotations,
+                                                barmode = 'group',
+                                                bargroupgap = 0.2,
+                                                bargap = 0.8,
+                                                legend=dict(
+                                                orientation="h",
+                                                yanchor="bottom",
+                                                y=1.02,
+                                                xanchor="right",
+                                                x=1
+                                                ),
+                                                showlegend = True,
+                                                xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                           showticklabels = False, 
+                                                           showgrid = False),
+                                                yaxis=dict(title="Weight (in Tons)", showgrid = False)
+                                                )
+                        
+                        }
+            else:
+                return{}
+
+        elif basis == 'ALL':
+    
+            if checklist == 'FTM':
+
+                if year_1 == ' ' and month_1 == ' ':
+            
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(PAID_WT,0) + NVL(TBB_WT,0) + NVL(FOD_WT,0) + NVL(BOD_WT,0))/1000,2) CYW
+                                ,ROUND(SUM(NVL(LYA_PAID_WT,0) + NVL(LYA_TBB_WT,0) + NVL(LYA_FOD_WT,0) + NVL(LYA_BOD_WT,0))/1000, 2) LYW
+                                ,ROUND((SUM(NVL(PAID_WT,0) + NVL(TBB_WT,0) + NVL(FOD_WT,0) + NVL(BOD_WT,0)) 
+                                - SUM(NVL(LYA_PAID_WT,0) + NVL(LYA_TBB_WT,0) + NVL(LYA_FOD_WT,0) + NVL(LYA_BOD_WT,0)))/1000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                                                                                                        AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                    '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYW']
+                    y2 = df['CYW']
+                    y3 = df['GP']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYW'],
+                                    name = 'LYW',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYW'],
+                                    name = 'CYW',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise Weight Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            bargap = 0.8,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="Weight (in Tons)", showgrid = False)
+                                            )
+
+                    }
+
+                elif year_1 != ' ' and month_1 != ' ':
+
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(PAID_WT,0) + NVL(TBB_WT,0) + NVL(FOD_WT,0) + NVL(BOD_WT,0))/1000,2) CYW
+                                ,ROUND(SUM(NVL(LYA_PAID_WT,0) + NVL(LYA_TBB_WT,0) + NVL(LYA_FOD_WT,0) + NVL(LYA_BOD_WT,0))/1000, 2) LYW
+                                ,ROUND((SUM(NVL(PAID_WT,0) + NVL(TBB_WT,0) + NVL(FOD_WT,0) + NVL(BOD_WT,0)) 
+                                - SUM(NVL(LYA_PAID_WT,0) + NVL(LYA_TBB_WT,0) + NVL(LYA_FOD_WT,0) + NVL(LYA_BOD_WT,0)))/1000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year_1)s%(month_1)s','YYYYMM'))
+                                                                                                                        AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                    '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division,\
+                        'year_1':year_1, 'month_1':month_1}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYW']
+                    y2 = df['CYW']
+                    y3 = df['GP']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYW'],
+                                    name = 'LYW',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYW'],
+                                    name = 'CYW',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise Weight Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            bargap = 0.8,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="Weight (in Tons)", showgrid = False)
+                                            )
+
+                    }
+
+            elif checklist == 'CUM':
+    
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(PAID_WT,0) + NVL(TBB_WT,0) + NVL(FOD_WT,0) + NVL(BOD_WT,0))/1000,2) CYW
+                                ,ROUND(SUM(NVL(LYA_PAID_WT,0) + NVL(LYA_TBB_WT,0) + NVL(LYA_FOD_WT,0) + NVL(LYA_BOD_WT,0))/1000, 2) LYW
+                                ,ROUND((SUM(NVL(PAID_WT,0) + NVL(TBB_WT,0) + NVL(FOD_WT,0) + NVL(BOD_WT,0)) 
+                                - SUM(NVL(LYA_PAID_WT,0) + NVL(LYA_TBB_WT,0) + NVL(LYA_FOD_WT,0) + NVL(LYA_BOD_WT,0)))/1000,2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) 
+                                    BETWEEN '01-APR-'||CASE WHEN TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'MM') IN ('01','02','03')
+                                        THEN TO_CHAR(TO_NUMBER(TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY'))-1)
+                                            ELSE TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY') END
+                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM')) 
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                        '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYW']
+                    y2 = df['CYW']
+                    y3 = df['GP']
+                    x1 = df.index
+            
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                    
+                    return {
+                            'data': [
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['LYW'],
+                                        name = 'LYW',
+                                        marker_color='rgb(242, 109, 7)'),
+                    
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['CYW'],
+                                        name = 'CYW',
+                                        marker_color='rgb(7, 128, 242)'),
+                        
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['GP'],
+                                        name = 'Growth',
+                                        marker_color= df['color'])
+                                   ],
+                            'layout' : go.Layout(
+                                                 title={
+                                                        'text': "Region-Controlling-Branch Wise Weight Comparison LY Vs CY",
+                                                        'y':0.98,
+                                                        'x':0.5,
+                                                        'xanchor': 'center',
+                                                        'yanchor': 'top'
+                                                       },
+                                                annotations = annotations,
+                                                barmode = 'group',
+                                                bargroupgap = 0.2,
+                                                bargap = 0.8,
+                                                legend=dict(
+                                                orientation="h",
+                                                yanchor="bottom",
+                                                y=1.02,
+                                                xanchor="right",
+                                                x=1
+                                                ),
+                                                showlegend = True,
+                                                xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                           showticklabels = False, 
+                                                           showgrid = False),
+                                                yaxis=dict(title="Weight (in Tons)", showgrid = False)
+                                                )
+                        
+                        }
+            else:
+                return{}
+    else:
+        return{}
+
+@app.callback(Output('Graph-3','figure'),[Input('submit_button','n_clicks')],
+                                         [State('region-dropdown','value'),\
+                                          State('controlling-dropdown','value'),\
+                                          State('branch-dropdown','value'),\
+                                          State('division-dropdown','value'),\
+                                          State('basis-dropdown','value'),\
+                                          State('year-dropdown','value'),\
+                                          State('month-dropdown','value'),\
+                                          State('checklist-dropdown','value'),\
+                                          State('visible-year-dropdown', 'value'),\
+                                          State('visible-month-dropdown','value')
+                                         
+                                        ])
+
+def update_graph_3(n_clicks, region, controlling, branch, division, basis, year, month, checklist, year_1, month_1):
+    
+    if n_clicks is not None and n_clicks > 0:
+
+        con = cx.connect(config.CONN_STR)
+        
+        if basis == 'PAID':
+
+            if checklist == 'FTM':
+
+                if year_1 == ' ' and month_1 == ' ':
+            
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(PAID_DWB,0)),2) CYD
+                                ,ROUND(SUM(NVL(LYA_PAID_DWB,0)),2) LYD
+                                ,ROUND((SUM(NVL(PAID_DWB,0)) - SUM(NVL(LYA_PAID_DWB,0))),2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                                                                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s', DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                    '''%{ 'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYD']
+                    y2 = df['CYD']
+                    y3 = df['GP']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYD'],
+                                    name = 'LYD',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYD'],
+                                    name = 'CYD',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise DWB Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            bargap = 0.8,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="DWB", showgrid = False),
+                                            )
+
+                    }
+
+                elif year_1 != ' ' and month_1 != ' ':
+
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(PAID_DWB,0)),2) CYD
+                                ,ROUND(SUM(NVL(LYA_PAID_DWB,0)),2) LYD
+                                ,ROUND((SUM(NVL(PAID_DWB,0)) - SUM(NVL(LYA_PAID_DWB,0))),2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year_1)s%(month_1)s','YYYYMM'))
+                                                                                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s', DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                    '''%{ 'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division,\
+                        'year_1':year_1, 'month_1':month_1}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYD']
+                    y2 = df['CYD']
+                    y3 = df['GP']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYD'],
+                                    name = 'LYD',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYD'],
+                                    name = 'CYD',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise DWB Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            bargap = 0.8,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="DWB", showgrid = False),
+                                            )
+
+                    }
+
+            elif checklist == 'CUM':
+    
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(PAID_DWB,0)),2) CYD
+                                ,ROUND(SUM(NVL(LYA_PAID_DWB,0)),2) LYD
+                                ,ROUND((SUM(NVL(PAID_DWB,0)) - SUM(NVL(LYA_PAID_DWB,0))),2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) 
+                                    BETWEEN '01-APR-'||CASE WHEN TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'MM') IN ('01','02','03')
+                                        THEN TO_CHAR(TO_NUMBER(TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY'))-1)
+                                            ELSE TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY') END
+                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM')) 
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                           
+                        '''%{'year': year, 'month': month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYD']
+                    y2 = df['CYD']
+                    y3 = df['GP']
+                    x1 = df.index
+            
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                               font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                               font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                               font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                    
+                    return {
+                            'data': [
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['LYD'],
+                                        name = 'LYD',
+                                        marker_color='rgb(242, 109, 7)'),
+                    
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['CYD'],
+                                        name = 'CYD',
+                                        marker_color='rgb(7, 128, 242)'),
+                        
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['GP'],
+                                        name = 'Growth',
+                                        marker_color= df['color'])
+                                   ],
+                            'layout' : go.Layout(
+                                                 title={
+                                                        'text': "Region-Controlling-Branch Wise DWB Comparison LY Vs CY",
+                                                        'y':0.98,
+                                                        'x':0.5,
+                                                        'xanchor': 'center',
+                                                        'yanchor': 'top'
+                                                       },
+                                                annotations = annotations,
+                                                barmode = 'group',
+                                                bargap = 0.8,
+                                                bargroupgap = 0.2,
+                                                legend=dict(
+                                                orientation="h",
+                                                yanchor="bottom",
+                                                y=1.02,
+                                                xanchor="right",
+                                                x=1
+                                                ),
+                                                showlegend = True,
+                                                xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                           showticklabels = False, 
+                                                           showgrid = False),
+                                                yaxis=dict(title="DWB", showgrid = False)
+                                                )
+                        
+                        }
+            else:
+                return{}
+
+        elif basis == 'TBB':
+        
+            if checklist == 'FTM':
+
+                if year_1 == ' ' and month_1 == ' ':
+            
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(TBB_DWB,0)),2) CYD
+                                ,ROUND(SUM(NVL(LYA_TBB_DWB,0)),2) LYD
+                                ,ROUND((SUM(NVL(TBB_DWB,0)) - SUM(NVL(LYA_TBB_DWB,0))),2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                                                                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                    '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYD']
+                    y2 = df['CYD']
+                    y3 = df['GP']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYD'],
+                                    name = 'LYD',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYD'],
+                                    name = 'CYD',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise DWB Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            bargap = 0.8,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="DWB", showgrid = False)
+                                            )
+
+                    }
+
+                elif year_1 != ' ' and month_1 != ' ':
+
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(TBB_DWB,0)),2) CYD
+                                ,ROUND(SUM(NVL(LYA_TBB_DWB,0)),2) LYD
+                                ,ROUND((SUM(NVL(TBB_DWB,0)) - SUM(NVL(LYA_TBB_DWB,0))),2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year_1)s%(month_1)s','YYYYMM'))
+                                                                                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                    '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division,\
+                         'year_1': year_1, 'month_1': month_1}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYD']
+                    y2 = df['CYD']
+                    y3 = df['GP']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYD'],
+                                    name = 'LYD',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYD'],
+                                    name = 'CYD',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise DWB Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            bargap = 0.8,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="DWB", showgrid = False)
+                                            )
+
+                    }
+
+            elif checklist == 'CUM':
+    
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(TBB_DWB,0)),2) CYD
+                                ,ROUND(SUM(NVL(LYA_TBB_DWB,0)),2) LYD
+                                ,ROUND((SUM(NVL(TBB_DWB,0)) - SUM(NVL(LYA_TBB_DWB,0))),2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) 
+                                    BETWEEN '01-APR-'||CASE WHEN TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'MM') IN ('01','02','03')
+                                        THEN TO_CHAR(TO_NUMBER(TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY'))-1)
+                                            ELSE TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY') END
+                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM')) 
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                        '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYD']
+                    y2 = df['CYD']
+                    y3 = df['GP']
+                    x1 = df.index
+            
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                    
+                    return {
+                            'data': [
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['LYD'],
+                                        name = 'LYD',
+                                        marker_color='rgb(242, 109, 7)'),
+                    
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['CYD'],
+                                        name = 'CYD',
+                                        marker_color='rgb(7, 128, 242)'),
+                        
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['GP'],
+                                        name = 'Growth',
+                                        marker_color= df['color'])
+                                   ],
+                            'layout' : go.Layout(
+                                                 title={
+                                                        'text': "Region-Controlling-Branch Wise DWB Comparison LY Vs CY",
+                                                        'y':0.98,
+                                                        'x':0.5,
+                                                        'xanchor': 'center',
+                                                        'yanchor': 'top'
+                                                       },
+                                                annotations = annotations,
+                                                bargap = 0.8,
+                                                barmode = 'group',
+                                                bargroupgap = 0.2,
+                                                legend=dict(
+                                                orientation="h",
+                                                yanchor="bottom",
+                                                y=1.02,
+                                                xanchor="right",
+                                                x=1
+                                                ),
+                                                showlegend = True,
+                                                xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                           showticklabels = False, 
+                                                           showgrid = False),
+                                                yaxis=dict(title="DWB", showgrid = False)
+                                                )
+                        
+                        }
+            else:
+                return{}
+
+        elif basis == 'FOD':
+    
+            if checklist == 'FTM':
+
+                if year_1 == ' ' and month_1 == ' ':
+            
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(FOD_DWB,0)),2) CYD
+                                ,ROUND(SUM(NVL(LYA_FOD_DWB,0)),2) LYD
+                                ,ROUND((SUM(NVL(FOD_DWB,0)) - SUM(NVL(LYA_FOD_DWB,0))),2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                                                                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                    '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYD']
+                    y2 = df['CYD']
+                    y3 = df['GP']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYD'],
+                                    name = 'LYD',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYD'],
+                                    name = 'CYD',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise DWB Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            bargap = 0.8,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="DWB", showgrid = False)
+                                            )
+
+                    }
+
+                elif year_1 != ' ' and month_1 != ' ':
+
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(FOD_DWB,0)),2) CYD
+                                ,ROUND(SUM(NVL(LYA_FOD_DWB,0)),2) LYD
+                                ,ROUND((SUM(NVL(FOD_DWB,0)) - SUM(NVL(LYA_FOD_DWB,0))),2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year_1)s%(month_1)s','YYYYMM'))
+                                                                                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                    '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division,\
+                        'year_1':year_1, 'month_1':month_1}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYD']
+                    y2 = df['CYD']
+                    y3 = df['GP']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYD'],
+                                    name = 'LYD',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYD'],
+                                    name = 'CYD',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise DWB Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            bargap = 0.8,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="DWB", showgrid = False)
+                                            )
+
+                    }
+
+            elif checklist == 'CUM':
+    
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(FOD_DWB,0)),2) CYD
+                                ,ROUND(SUM(NVL(LYA_FOD_DWB,0)),2) LYD
+                                ,ROUND((SUM(NVL(FOD_DWB,0)) - SUM(NVL(LYA_FOD_DWB,0))),2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) 
+                                    BETWEEN '01-APR-'||CASE WHEN TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'MM') IN ('01','02','03')
+                                        THEN TO_CHAR(TO_NUMBER(TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY'))-1)
+                                            ELSE TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY') END
+                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM')) 
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                        '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYD']
+                    y2 = df['CYD']
+                    y3 = df['GP']
+                    x1 = df.index
+            
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                    
+                    return {
+                            'data': [
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['LYD'],
+                                        name = 'LYD',
+                                        marker_color='rgb(242, 109, 7)'),
+                    
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['CYD'],
+                                        name = 'CYD',
+                                        marker_color='rgb(7, 128, 242)'),
+                        
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['GP'],
+                                        name = 'Growth',
+                                        marker_color= df['color'])
+                                   ],
+                            'layout' : go.Layout(
+                                                 title={
+                                                        'text': "Region-Controlling-Branch Wise DWB Comparison LY Vs CY",
+                                                        'y':0.98,
+                                                        'x':0.5,
+                                                        'xanchor': 'center',
+                                                        'yanchor': 'top'
+                                                       },
+                                                annotations = annotations,
+                                                barmode = 'group',
+                                                bargroupgap = 0.2,
+                                                bargap = 0.8,
+                                                legend=dict(
+                                                orientation="h",
+                                                yanchor="bottom",
+                                                y=1.02,
+                                                xanchor="right",
+                                                x=1
+                                                ),
+                                                showlegend = True,
+                                                xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                           showticklabels = False, 
+                                                           showgrid = False),
+                                                yaxis=dict(title="DWB", showgrid = False)
+                                                )
+                        
+                        }
+            else:
+                return{}
+
+        elif basis == 'BOD':
+    
+            if checklist == 'FTM':
+
+                if year_1 == ' ' and month_1 == ' ':
+            
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(BOD_DWB,0)),2) CYD
+                                ,ROUND(SUM(NVL(LYA_BOD_DWB,0)),2) LYD
+                                ,ROUND((SUM(NVL(BOD_DWB,0)) - SUM(NVL(LYA_BOD_DWB,0))),2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                                                                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                    '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYD']
+                    y2 = df['CYD']
+                    y3 = df['GP']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYD'],
+                                    name = 'LYD',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYD'],
+                                    name = 'CYD',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise DWB Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            bargap = 0.8,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="DWB", showgrid = False)
+                                            )
+
+                    }
+
+                elif year_1 != ' ' and month_1 != ' ':
+
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(BOD_DWB,0)),2) CYD
+                                ,ROUND(SUM(NVL(LYA_BOD_DWB,0)),2) LYD
+                                ,ROUND((SUM(NVL(BOD_DWB,0)) - SUM(NVL(LYA_BOD_DWB,0))),2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year_1)s%(month_1)s','YYYYMM'))
+                                                                                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                    '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division,\
+                        'year_1':year_1, 'month_1':month_1}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYD']
+                    y2 = df['CYD']
+                    y3 = df['GP']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                    font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYD'],
+                                    name = 'LYD',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYD'],
+                                    name = 'CYD',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise DWB Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            bargap = 0.8,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="DWB", showgrid = False)
+                                            )
+
+                    }
+  
+            elif checklist == 'CUM':
+    
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(BOD_DWB,0)),2) CYD
+                                ,ROUND(SUM(NVL(LYA_BOD_DWB,0)),2) LYD
+                                ,ROUND((SUM(NVL(BOD_DWB,0)) - SUM(NVL(LYA_BOD_DWB,0))),2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) 
+                                    BETWEEN '01-APR-'||CASE WHEN TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'MM') IN ('01','02','03')
+                                        THEN TO_CHAR(TO_NUMBER(TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY'))-1)
+                                            ELSE TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY') END
+                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM')) 
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                        '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYD']
+                    y2 = df['CYD']
+                    y3 = df['GP']
+                    x1 = df.index
+            
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                    
+                    return {
+                            'data': [
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['LYD'],
+                                        name = 'LYD',
+                                        marker_color='rgb(242, 109, 7)'),
+                    
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['CYD'],
+                                        name = 'CYD',
+                                        marker_color='rgb(7, 128, 242)'),
+                        
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['GP'],
+                                        name = 'Growth',
+                                        marker_color= df['color'])
+                                   ],
+                            'layout' : go.Layout(
+                                                 title={
+                                                        'text': "Region-Controlling-Branch Wise DWB Comparison LY Vs CY",
+                                                        'y':0.98,
+                                                        'x':0.5,
+                                                        'xanchor': 'center',
+                                                        'yanchor': 'top'
+                                                       },
+                                                annotations = annotations,
+                                                barmode = 'group',
+                                                bargroupgap = 0.2,
+                                                bargap = 0.8,
+                                                legend=dict(
+                                                orientation="h",
+                                                yanchor="bottom",
+                                                y=1.02,
+                                                xanchor="right",
+                                                x=1
+                                                ),
+                                                showlegend = True,
+                                                xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                           showticklabels = False, 
+                                                           showgrid = False),
+                                                yaxis=dict(title="DWB", showgrid = False)
+                                                )
+                        
+                        }
+            else:
+                return{}
+
+        elif basis == 'ALL':
+    
+            if checklist == 'FTM':
+
+                if year_1 == ' ' and month_1 == ' ':
+            
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(PAID_DWB,0) + NVL(TBB_DWB,0) + NVL(FOD_DWB,0) + NVL(BOD_DWB,0)),2) CYD
+                                ,ROUND(SUM(NVL(LYA_PAID_DWB,0) + NVL(LYA_TBB_DWB,0) + NVL(LYA_FOD_DWB,0) + NVL(LYA_BOD_DWB,0)), 2) LYD
+                                ,ROUND((SUM(NVL(PAID_DWB,0) + NVL(TBB_DWB,0) + NVL(FOD_DWB,0) + NVL(BOD_DWB,0)) 
+                                - SUM(NVL(LYA_PAID_DWB,0) + NVL(LYA_TBB_DWB,0) + NVL(LYA_FOD_DWB,0) + NVL(LYA_BOD_DWB,0))),2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                                                                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                    '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYD']
+                    y2 = df['CYD']
+                    y3 = df['GP']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYD'],
+                                    name = 'LYD',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYD'],
+                                    name = 'CYD',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise DWB Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            bargap = 0.8,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="DWB", showgrid = False)
+                                            )
+
+                    }
+
+                elif year_1 != ' ' and month_1 != ' ':
+
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(PAID_DWB,0) + NVL(TBB_DWB,0) + NVL(FOD_DWB,0) + NVL(BOD_DWB,0)),2) CYD
+                                ,ROUND(SUM(NVL(LYA_PAID_DWB,0) + NVL(LYA_TBB_DWB,0) + NVL(LYA_FOD_DWB,0) + NVL(LYA_BOD_DWB,0)), 2) LYD
+                                ,ROUND((SUM(NVL(PAID_DWB,0) + NVL(TBB_DWB,0) + NVL(FOD_DWB,0) + NVL(BOD_DWB,0)) 
+                                - SUM(NVL(LYA_PAID_DWB,0) + NVL(LYA_TBB_DWB,0) + NVL(LYA_FOD_DWB,0) + NVL(LYA_BOD_DWB,0))),2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) BETWEEN last_day(TO_DATE('%(year_1)s%(month_1)s','YYYYMM'))
+                                                                                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM'))
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                    '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division,\
+                        'year_1':year_1, 'month_1':month_1}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYD']
+                    y2 = df['CYD']
+                    y3 = df['GP']
+                    x1 = df.index
+
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                            font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                            
+                    return {
+                        'data': [
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['LYD'],
+                                    name = 'LYD',
+                                    marker_color='rgb(242, 109, 7)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['CYD'],
+                                    name = 'CYD',
+                                    marker_color='rgb(7, 128, 242)'),
+
+                                    go.Bar(
+                                    x=df.index,
+                                    y=df['GP'],
+                                    name = 'Growth',
+                                    marker_color= df['color'])
+                                ],
+                        'layout' : go.Layout(
+                                                title={
+                                                    'text': "Region-Controlling-Branch Wise DWB Comparison LY Vs CY",
+                                                    'y':0.98,
+                                                    'x':0.5,
+                                                    'xanchor': 'center',
+                                                    'yanchor': 'top'
+                                                    },
+                                            annotations = annotations,
+                                            barmode = 'group',
+                                            bargroupgap = 0.2,
+                                            bargap = 0.8,
+                                            legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                            ),
+                                            showlegend = True,
+                                            xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                            showticklabels = False, 
+                                                            showgrid = False),
+                                            yaxis=dict(title="DWB", showgrid = False)
+                                            )
+
+                    }
+
+            elif checklist == 'CUM':
+    
+                    sql = '''
+                            SELECT
+                                 ROUND(SUM(NVL(PAID_DWB,0) + NVL(TBB_DWB,0) + NVL(FOD_DWB,0) + NVL(BOD_DWB,0)),2) CYD
+                                ,ROUND(SUM(NVL(LYA_PAID_DWB,0) + NVL(LYA_TBB_DWB,0) + NVL(LYA_FOD_DWB,0) + NVL(LYA_BOD_DWB,0)), 2) LYD
+                                ,ROUND((SUM(NVL(PAID_DWB,0) + NVL(TBB_DWB,0) + NVL(FOD_DWB,0) + NVL(BOD_DWB,0)) 
+                                - SUM(NVL(LYA_PAID_DWB,0) + NVL(LYA_TBB_DWB,0) + NVL(LYA_FOD_DWB,0) + NVL(LYA_BOD_DWB,0))),2) GP
+                            FROM
+                                CT_BUSINESS_GROWTH_NEW_IMPL
+                            WHERE
+                                LAST_DAY(TO_DATE(TO_CHAR(TO_DATE(YEAR_MONTH_DAY, 'YYYYMMDD'),'YYYYMM'),'YYYYMM')) 
+                                    BETWEEN '01-APR-'||CASE WHEN TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'MM') IN ('01','02','03')
+                                        THEN TO_CHAR(TO_NUMBER(TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY'))-1)
+                                            ELSE TO_CHAR(last_day(TO_DATE('%(year)s%(month)s','YYYYMM')),'YYYY') END
+                                                AND last_day(TO_DATE('%(year)s%(month)s','YYYYMM')) 
+                                AND REGION_CODE = NVL('%(region)s', REGION_CODE)
+                                AND CONTROLLING_CODE = NVL('%(controlling)s', CONTROLLING_CODE)
+                                AND BRANCH_CODE = NVL('%(branch)s', BRANCH_CODE)
+                                AND DIVISION_CODE = NVL('%(division)s',DIVISION_CODE)
+                                AND REGION_CODE <> 'XCRP'
+                            
+                        '''%{'year':year, 'month':month, 'region': region, 'controlling': controlling, 'branch': branch, 'division': division}
+
+                    df = pd.read_sql_query(sql, con)
+                        
+                    df['color'] = np.where(df['GP'] < 0, 'red', 'green')
+
+                    y1 = df['LYD']
+                    y2 = df['CYD']
+                    y3 = df['GP']
+                    x1 = df.index
+            
+                    annot_1 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = -70, yanchor='bottom',showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y1)]
+                    annot_2 = [dict(x=xi,y=yi,text= str(yi),xanchor='center',yanchor='bottom',showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y2)]
+                    annot_3 = [dict(x=xi,y=yi,text= str(yi),xanchor='left', xshift = 80, yanchor='bottom', showarrow=False,\
+                              font=dict(size = 9.5), textangle = -90) for xi, yi in zip(x1, y3)]
+
+                    annotations = annot_1 + annot_2 + annot_3
+                    
+                    return {
+                            'data': [
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['LYD'],
+                                        name = 'LYD',
+                                        marker_color='rgb(242, 109, 7)'),
+                    
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['CYD'],
+                                        name = 'CYD',
+                                        marker_color='rgb(7, 128, 242)'),
+                        
+                                      go.Bar(
+                                        x=df.index,
+                                        y=df['GP'],
+                                        name = 'Growth',
+                                        marker_color= df['color'])
+                                   ],
+                            'layout' : go.Layout(
+                                                 title={
+                                                        'text': "Region-Controlling-Branch Wise DWB Comparison LY Vs CY",
+                                                        'y':0.98,
+                                                        'x':0.5,
+                                                        'xanchor': 'center',
+                                                        'yanchor': 'top'
+                                                       },
+                                                annotations = annotations,
+                                                barmode = 'group',
+                                                bargroupgap = 0.2,
+                                                bargap = 0.8,
+                                                legend=dict(
+                                                orientation="h",
+                                                yanchor="bottom",
+                                                y=1.02,
+                                                xanchor="right",
+                                                x=1
+                                                ),
+                                                showlegend = True,
+                                                xaxis=dict(title= str(region) + " - " + str(controlling) + " - " + str(branch), 
+                                                           showticklabels = False, 
+                                                           showgrid = False),
+                                                yaxis=dict(title="DWB", showgrid = False)
+                                                )
+                        
+                        }
+            else:
+                return{}
+    else:
+        return {}
+
