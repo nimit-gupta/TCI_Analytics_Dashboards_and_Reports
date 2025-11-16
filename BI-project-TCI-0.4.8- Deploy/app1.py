@@ -1,3 +1,11 @@
+#!/usr/bin/python
+#-*- coding:utf-8 -*-
+
+from __future__ import (
+                        absolute_import,
+                        unicode_literals
+                       )
+
 import pandas as pd
 import numpy as np
 import cx_Oracle as cx
