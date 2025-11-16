@@ -6,18 +6,23 @@ from __future__ import (
                         unicode_literals
                        )
 
-import pandas as pd
-import numpy as np
-import cx_Oracle as cx
+try:
 
-import dash
-import plotly.graph_objects as go
-import dash_core_components as dcc
-import dash_html_components as html
-import dash_bootstrap_components as dbc
-from dash.dependencies import Input, Output, State
+  import pandas as pd
+  import numpy as np
+  import cx_Oracle as cx
 
-import config
+  import dash
+  import plotly.graph_objects as go
+  import dash_core_components as dcc
+  import dash_html_components as html
+  import dash_bootstrap_components as dbc
+  from dash.dependencies import Input, Output, State
+
+  import config
+
+except ImportError as error:
+    pass
 
 app = dash.Dash(__name__,requests_pathname_prefix='/app1/',external_stylesheets = [dbc.themes.BOOTSTRAP])
 
